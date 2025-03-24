@@ -6,13 +6,10 @@ import android.text.TextUtils
 import android.util.Log
 import android.view.Menu
 import android.view.MenuItem
-import android.view.View
 import androidx.appcompat.widget.SearchView
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.appbar.CollapsingToolbarLayout
 import androidx.lifecycle.lifecycleScope
-import androidx.recyclerview.widget.DividerItemDecoration
-import androidx.recyclerview.widget.LinearLayoutManager
 import com.neko.v2ray.AppConfig
 import com.neko.v2ray.AppConfig.ANG_PACKAGE
 import com.neko.v2ray.R
@@ -21,7 +18,9 @@ import com.neko.v2ray.dto.AppInfo
 import com.neko.v2ray.extension.toast
 import com.neko.v2ray.extension.v2RayApplication
 import com.neko.v2ray.handler.MmkvManager
+import com.neko.v2ray.handler.SettingsManager
 import com.neko.v2ray.util.AppManagerUtil
+import com.neko.v2ray.util.HttpUtil
 import com.neko.v2ray.util.Utils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -45,18 +44,15 @@ class PerAppProxyActivity : BaseActivity() {
         setSupportActionBar(toolbar)
         supportActionBar?.setDisplayHomeAsUpEnabled(true)
 
-        val dividerItemDecoration = DividerItemDecoration(this, LinearLayoutManager.VERTICAL)
-        binding.recyclerView.addItemDecoration(dividerItemDecoration)
-
-        val blacklist = MmkvManager.decodeSettingsStringSet(AppConfig.PREF_PER_APP_PROXY_SET)
+        addCustomDividerToRecyclerView(binding.recyclerView, this, R.drawable.custom_divider)
 
         lifecycleScope.launch {
             try {
-                binding.pbWaiting.visibility = View.VISIBLE
+                binding.pbWaiting.show()
                 val blacklist = MmkvManager.decodeSettingsStringSet(AppConfig.PREF_PER_APP_PROXY_SET)
                 val apps = withContext(Dispatchers.IO) {
                     val appsList = AppManagerUtil.loadNetworkAppList(this@PerAppProxyActivity)
-                    
+
                     if (blacklist != null) {
                         appsList.forEach { app ->
                             app.isSelected = if (blacklist.contains(app.packageName)) 1 else 0
@@ -77,9 +73,9 @@ class PerAppProxyActivity : BaseActivity() {
                 appsAll = apps
                 adapter = PerAppProxyAdapter(this@PerAppProxyActivity, apps, blacklist)
                 binding.recyclerView.adapter = adapter
-                binding.pbWaiting.visibility = View.GONE
+                binding.pbWaiting.hide()
             } catch (e: Exception) {
-                binding.pbWaiting.visibility = View.GONE
+                binding.pbWaiting.hide()
                 Log.e(ANG_PACKAGE, "Error loading apps", e)
             }
         }
@@ -160,13 +156,20 @@ class PerAppProxyActivity : BaseActivity() {
 
     private fun selectProxyApp() {
         toast(R.string.msg_downloading_content)
+        binding.pbWaiting.show()
+
         val url = AppConfig.androidpackagenamelistUrl
         lifecycleScope.launch(Dispatchers.IO) {
-            val content = Utils.getUrlContext(url, 5000)
+            var content = HttpUtil.getUrlContent(url, 5000)
+            if (content.isNullOrEmpty()) {
+                val httpPort = SettingsManager.getHttpPort()
+                content = HttpUtil.getUrlContent(url, 5000, httpPort) ?: ""
+            }
             launch(Dispatchers.Main) {
                 Log.d(ANG_PACKAGE, content)
                 selectProxyApp(content, true)
                 toast(R.string.toast_success)
+                binding.pbWaiting.hide()
             }
         }
     }

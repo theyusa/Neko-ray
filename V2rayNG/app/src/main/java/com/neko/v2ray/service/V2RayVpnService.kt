@@ -35,18 +35,15 @@ import java.lang.ref.SoftReference
 class V2RayVpnService : VpnService(), ServiceControl {
     companion object {
         private const val VPN_MTU = 1500
-        private const val PRIVATE_VLAN4_CLIENT = "10.10.10.1"
-        private const val PRIVATE_VLAN4_ROUTER = "10.10.10.2"
-        private const val PRIVATE_VLAN6_CLIENT = "fc00::10:10:10:1"
-        private const val PRIVATE_VLAN6_ROUTER = "fc00::10:10:10:2"
+        private const val PRIVATE_VLAN4_CLIENT = "10.10.14.1"
+        private const val PRIVATE_VLAN4_ROUTER = "10.10.14.2"
+        private const val PRIVATE_VLAN6_CLIENT = "fc00::10:10:14:1"
+        private const val PRIVATE_VLAN6_ROUTER = "fc00::10:10:14:2"
         private const val TUN2SOCKS = "libtun2socks.so"
     }
 
-
     private lateinit var mInterface: ParcelFileDescriptor
     private var isRunning = false
-
-    //val fd: Int get() = mInterface.fd
     private lateinit var process: Process
 
     /**destroy
@@ -88,7 +85,6 @@ class V2RayVpnService : VpnService(), ServiceControl {
 
     override fun onCreate() {
         super.onCreate()
-
         val policy = StrictMode.ThreadPolicy.Builder().permitAll().build()
         StrictMode.setThreadPolicy(policy)
         V2RayServiceManager.serviceControl = SoftReference(this)
@@ -105,15 +101,61 @@ class V2RayVpnService : VpnService(), ServiceControl {
 
     override fun onDestroy() {
         super.onDestroy()
-        V2RayServiceManager.cancelNotification()
+        NotificationService.cancelNotification()
     }
 
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        V2RayServiceManager.startV2rayPoint()
+        return START_STICKY
+        //return super.onStartCommand(intent, flags, startId)
+    }
+
+    override fun getService(): Service {
+        return this
+    }
+
+    override fun startService() {
+        setup()
+    }
+
+    override fun stopService() {
+        stopV2Ray(true)
+    }
+
+    override fun vpnProtect(socket: Int): Boolean {
+        return protect(socket)
+    }
+
+    @RequiresApi(Build.VERSION_CODES.N)
+    override fun attachBaseContext(newBase: Context?) {
+        val context = newBase?.let {
+            MyContextWrapper.wrap(newBase, SettingsManager.getLocale())
+        }
+        super.attachBaseContext(context)
+    }
+
+    /**
+     * Sets up the VPN service.
+     * Prepares the VPN and configures it if preparation is successful.
+     */
     private fun setup() {
         val prepare = prepare(this)
         if (prepare != null) {
             return
         }
 
+        if (setupVpnService() != true) {
+            return
+        }
+
+        runTun2socks()
+    }
+
+    /**
+     * Configures the VPN service.
+     * @return True if the VPN service was configured successfully, false otherwise.
+     */
+    private fun setupVpnService(): Boolean {
         // If the old interface has exactly the same parameters, use it!
         // Configure a builder while parsing the parameters.
         val builder = Builder()
@@ -144,7 +186,7 @@ class V2RayVpnService : VpnService(), ServiceControl {
 //        if (MmkvManager.decodeSettingsBool(AppConfig.PREF_LOCAL_DNS_ENABLED) == true) {
 //            builder.addDnsServer(PRIVATE_VLAN4_ROUTER)
 //        } else {
-        Utils.getVpnDnsServers()
+        SettingsManager.getVpnDnsServers()
             .forEach {
                 if (Utils.isPureIpAddress(it)) {
                     builder.addDnsServer(it)
@@ -152,7 +194,7 @@ class V2RayVpnService : VpnService(), ServiceControl {
             }
 //        }
 
-        builder.setSession(V2RayServiceManager.currentConfig?.remarks.orEmpty())
+        builder.setSession(V2RayServiceManager.getRunningServerName())
 
         val selfPackageName = BuildConfig.APPLICATION_ID
         if (MmkvManager.decodeSettingsBool(AppConfig.PREF_PER_APP_PROXY)) {
@@ -200,14 +242,19 @@ class V2RayVpnService : VpnService(), ServiceControl {
         try {
             mInterface = builder.establish()!!
             isRunning = true
-            runTun2socks()
+            return true
         } catch (e: Exception) {
             // non-nullable lateinit var
             e.printStackTrace()
             stopV2Ray()
         }
+        return false
     }
 
+    /**
+     * Runs the tun2socks process.
+     * Starts the tun2socks process with the appropriate parameters.
+     */
     private fun runTun2socks() {
         val socksPort = SettingsManager.getSocksPort()
         val cmd = arrayListOf(
@@ -255,6 +302,10 @@ class V2RayVpnService : VpnService(), ServiceControl {
         }
     }
 
+    /**
+     * Sends the file descriptor to the tun2socks process.
+     * Attempts to send the file descriptor multiple times if necessary.
+     */
     private fun sendFd() {
         val fd = mInterface.fileDescriptor
         val path = File(applicationContext.filesDir, "sock_path").absolutePath
@@ -279,12 +330,10 @@ class V2RayVpnService : VpnService(), ServiceControl {
         }
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        V2RayServiceManager.startV2rayPoint()
-        return START_STICKY
-        //return super.onStartCommand(intent, flags, startId)
-    }
-
+    /**
+     * Stops the V2Ray service.
+     * @param isForced Whether to force stop the service.
+     */
     private fun stopV2Ray(isForced: Boolean = true) {
 //        val configName = defaultDPreference.getPrefString(PREF_CURR_CONFIG_GUID, "")
 //        val emptyInfo = VpnNetworkInfo()
@@ -322,29 +371,5 @@ class V2RayVpnService : VpnService(), ServiceControl {
                 // ignored
             }
         }
-    }
-
-    override fun getService(): Service {
-        return this
-    }
-
-    override fun startService() {
-        setup()
-    }
-
-    override fun stopService() {
-        stopV2Ray(true)
-    }
-
-    override fun vpnProtect(socket: Int): Boolean {
-        return protect(socket)
-    }
-
-    @RequiresApi(Build.VERSION_CODES.N)
-    override fun attachBaseContext(newBase: Context?) {
-        val context = newBase?.let {
-            MyContextWrapper.wrap(newBase, Utils.getLocale())
-        }
-        super.attachBaseContext(context)
     }
 }

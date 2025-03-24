@@ -29,7 +29,7 @@
             app:maxLines="3"
             app:scrimAnimationDuration="50"
             app:statusBarScrim="@null"
-            app:title="@string/title_pref_per_app_proxy"
+            app:title="@string/per_app_proxy_settings"
             app:titleCollapseMode="scale"
             app:toolbarId="@+id/toolbar">
             <com.google.android.material.appbar.MaterialToolbar
@@ -62,6 +62,19 @@
             app:cardBackgroundColor="#00000000"
             app:cardCornerRadius="28.0dip"
             app:cardElevation="0.0dip">
+            <com.google.android.material.progressindicator.LinearProgressIndicator
+                android:id="@+id/pb_waiting"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingTop="0.0dip"
+                android:paddingBottom="0.0dip"
+                android:paddingStart="8.0dip"
+                android:paddingEnd="8.0dip"
+                android:layout_marginStart="20.0dip"
+                android:layout_marginEnd="20.0dip"
+                android:indeterminate="true"
+                android:visibility="invisible"
+                app:indicatorColor="?attr/colorThemeUwu" />
             <androidx.core.widget.NestedScrollView
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
@@ -133,7 +146,7 @@
                                             android:textAppearance="@style/TextAppearance.AppCompat.Small"
                                             android:layout_width="wrap_content"
                                             android:layout_height="wrap_content"
-                                            android:text="@string/title_pref_per_app_proxy"
+                                            android:text="@string/per_app_proxy_settings_enable"
                                             android:layout_below="@+id/switch_per_app_proxy" />
                                     </LinearLayout>
                                 </FrameLayout>
@@ -197,13 +210,6 @@
                             </com.google.android.material.card.MaterialCardView>
                         </LinearLayout>
                     </LinearLayout>
-                    <ProgressBar
-                        android:layout_marginTop="8.0dip"
-                        android:layout_marginBottom="8.0dip"
-                        android:id="@+id/pb_waiting"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        style="@android:style/Widget.DeviceDefault.ProgressBar" />
                     <androidx.recyclerview.widget.RecyclerView
                         android:layout_marginTop="0.0dip"
                         android:layout_marginBottom="0.0dip"

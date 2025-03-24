@@ -1,25 +1,22 @@
-package com.neko.v2ray.util
+package com.neko.v2ray.handler
 
 import android.content.Context
 import android.os.SystemClock
 import android.text.TextUtils
 import android.util.Log
 import com.neko.v2ray.AppConfig
-import com.neko.v2ray.AppConfig.LOOPBACK
 import com.neko.v2ray.R
 import com.neko.v2ray.extension.responseLength
+import com.neko.v2ray.util.HttpUtil
 import kotlinx.coroutines.isActive
 import libv2ray.Libv2ray
 import java.io.IOException
-import java.net.HttpURLConnection
 import java.net.InetSocketAddress
-import java.net.Proxy
 import java.net.Socket
-import java.net.URL
 import java.net.UnknownHostException
 import kotlin.coroutines.coroutineContext
 
-object SpeedtestUtil {
+object SpeedtestManager {
 
     private val tcpTestingSockets = ArrayList<Socket?>()
 
@@ -39,7 +36,7 @@ object SpeedtestUtil {
 
     fun realPing(config: String): Long {
         return try {
-            Libv2ray.measureOutboundDelay(config, Utils.getDelayTestUrl())
+            Libv2ray.measureOutboundDelay(config, SettingsManager.getDelayTestUrl())
         } catch (e: Exception) {
             Log.d(AppConfig.ANG_PACKAGE, "realPing: $e")
             -1L
@@ -101,23 +98,9 @@ object SpeedtestUtil {
     fun testConnection(context: Context, port: Int): Pair<Long, String> {
         var result: String
         var elapsed = -1L
-        var conn: HttpURLConnection? = null
 
+        val conn = HttpUtil.createProxyConnection(SettingsManager.getDelayTestUrl(), port, 15000, 15000) ?: return Pair(elapsed, "")
         try {
-            val url = URL(Utils.getDelayTestUrl())
-
-            conn = url.openConnection(
-                Proxy(
-                    Proxy.Type.HTTP,
-                    InetSocketAddress(LOOPBACK, port)
-                )
-            ) as HttpURLConnection
-            conn.connectTimeout = 30000
-            conn.readTimeout = 30000
-            conn.setRequestProperty("Connection", "close")
-            conn.instanceFollowRedirects = false
-            conn.useCaches = false
-
             val start = SystemClock.elapsedRealtime()
             val code = conn.responseCode
             elapsed = SystemClock.elapsedRealtime() - start

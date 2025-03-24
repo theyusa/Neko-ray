@@ -6,22 +6,21 @@ import android.view.Menu
 import android.view.MenuItem
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.appbar.CollapsingToolbarLayout
-import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.neko.v2ray.R
 import com.neko.v2ray.databinding.ActivitySubSettingBinding
-import com.neko.v2ray.databinding.LayoutProgressBinding
 import com.neko.v2ray.dto.SubscriptionItem
 import com.neko.v2ray.extension.toast
 import com.neko.v2ray.handler.AngConfigManager
 import com.neko.v2ray.handler.MmkvManager
 import com.neko.v2ray.helper.SimpleItemTouchHelperCallback
-import com.neko.v2ray.util.SoftInputAssist
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+
+import com.neko.v2ray.util.SoftInputAssist
 
 class SubSettingActivity : BaseActivity() {
     private val binding by lazy { ActivitySubSettingBinding.inflate(layoutInflater) }
@@ -43,6 +42,7 @@ class SubSettingActivity : BaseActivity() {
 
         binding.recyclerView.setHasFixedSize(true)
         binding.recyclerView.layoutManager = LinearLayoutManager(this)
+        addCustomDividerToRecyclerView(binding.recyclerView, this, R.drawable.custom_divider)
         binding.recyclerView.adapter = adapter
 
         mItemTouchHelper = ItemTouchHelper(SimpleItemTouchHelperCallback(adapter))
@@ -77,10 +77,7 @@ class SubSettingActivity : BaseActivity() {
         }
 
         R.id.sub_update -> {
-            val dialog = MaterialAlertDialogBuilder(this)
-                .setView(LayoutProgressBinding.inflate(layoutInflater).root)
-                .setCancelable(false)
-                .show()
+            binding.pbWaiting.show()
 
             lifecycleScope.launch(Dispatchers.IO) {
                 val count = AngConfigManager.updateConfigViaSubAll()
@@ -91,7 +88,7 @@ class SubSettingActivity : BaseActivity() {
                     } else {
                         toast(R.string.toast_failure)
                     }
-                    dialog.dismiss()
+                    binding.pbWaiting.hide()
                 }
             }
 

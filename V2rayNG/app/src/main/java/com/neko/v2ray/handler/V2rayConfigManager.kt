@@ -83,7 +83,6 @@ object V2rayConfigManager {
             }
         }
 
-        //取得默认配置
         val assets = Utils.readTextFromAssets(context, "v2ray_config.json")
         if (TextUtils.isEmpty(assets)) {
             return result
@@ -270,8 +269,8 @@ object V2rayConfigManager {
                 )
             }
 
-            // DNS inbound对象
-            val remoteDns = Utils.getRemoteDnsServers()
+            // DNS inbound
+            val remoteDns = SettingsManager.getRemoteDnsServers()
             if (v2rayConfig.inbounds.none { e -> e.protocol == "dokodemo-door" && e.tag == "dns-in" }) {
                 val dnsInboundSettings = V2rayConfig.InboundBean.InSettingsBean(
                     address = if (Utils.isPureIpAddress(remoteDns.first())) remoteDns.first() else AppConfig.DNS_PROXY,
@@ -295,7 +294,7 @@ object V2rayConfigManager {
                 )
             }
 
-            // DNS outbound对象
+            // DNS outbound
             if (v2rayConfig.outbounds.none { e -> e.protocol == "dns" && e.tag == "dns-out" }) {
                 v2rayConfig.outbounds.add(
                     V2rayConfig.OutboundBean(
@@ -329,7 +328,7 @@ object V2rayConfigManager {
             val servers = ArrayList<Any>()
 
             //remote Dns
-            val remoteDns = Utils.getRemoteDnsServers()
+            val remoteDns = SettingsManager.getRemoteDnsServers()
             val proxyDomain = userRule2Domain(TAG_PROXY)
             remoteDns.forEach {
                 servers.add(it)
@@ -344,7 +343,7 @@ object V2rayConfigManager {
             }
 
             // domestic DNS
-            val domesticDns = Utils.getDomesticDnsServers()
+            val domesticDns = SettingsManager.getDomesticDnsServers()
             val directDomain = userRule2Domain(TAG_DIRECT)
             val isCnRoutingMode = directDomain.contains(GEOSITE_CN)
             val geoipCn = arrayListOf(GEOIP_CN)
@@ -402,7 +401,7 @@ object V2rayConfigManager {
             hosts[DNS_YANDEX_DOMAIN] = DNS_YANDEX_ADDRESSES
 
 
-            // DNS dns对象
+            // DNS dns
             v2rayConfig.dns = V2rayConfig.DnsBean(
                 servers = servers,
                 hosts = hosts

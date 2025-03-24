@@ -22,16 +22,15 @@ import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.neko.v2ray.AppConfig
-import com.neko.v2ray.AppConfig.LOOPBACK
 import com.neko.v2ray.R
 import com.neko.v2ray.databinding.ActivityUserAssetBinding
 import com.neko.v2ray.databinding.ItemRecyclerUserAssetBinding
-import com.neko.v2ray.databinding.LayoutProgressBinding
 import com.neko.v2ray.dto.AssetUrlItem
 import com.neko.v2ray.extension.toTrafficString
 import com.neko.v2ray.extension.toast
 import com.neko.v2ray.handler.MmkvManager
 import com.neko.v2ray.handler.SettingsManager
+import com.neko.v2ray.util.HttpUtil
 import com.neko.v2ray.util.Utils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -39,9 +38,6 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 import java.net.HttpURLConnection
-import java.net.InetSocketAddress
-import java.net.Proxy
-import java.net.URL
 import java.text.DateFormat
 import java.util.Date
 
@@ -95,6 +91,7 @@ class UserAssetActivity : BaseActivity() {
 
         binding.recyclerView.setHasFixedSize(true)
         binding.recyclerView.layoutManager = LinearLayoutManager(this)
+        addCustomDividerToRecyclerView(binding.recyclerView, this, R.drawable.custom_divider)
         binding.recyclerView.adapter = UserAssetAdapter()
     }
 
@@ -192,8 +189,10 @@ class UserAssetActivity : BaseActivity() {
                 return false
             }
             // Send URL to UserAssetUrlActivity for Processing
-            startActivity(Intent(this, UserAssetUrlActivity::class.java)
-                .putExtra(UserAssetUrlActivity.ASSET_URL_QRCODE, url))
+            startActivity(
+                Intent(this, UserAssetUrlActivity::class.java)
+                    .putExtra(UserAssetUrlActivity.ASSET_URL_QRCODE, url)
+            )
         } catch (e: Exception) {
             e.printStackTrace()
             return false
@@ -202,32 +201,31 @@ class UserAssetActivity : BaseActivity() {
     }
 
     private fun downloadGeoFiles() {
-        val dialog = AlertDialog.Builder(this)
-            .setView(LayoutProgressBinding.inflate(layoutInflater).root)
-            .setCancelable(false)
-            .show()
+        binding.pbWaiting.show()
         toast(R.string.msg_downloading_content)
 
         val httpPort = SettingsManager.getHttpPort()
         var assets = MmkvManager.decodeAssetUrls()
         assets = addBuiltInGeoItems(assets)
 
-        assets.forEach {
-            //toast(getString(R.string.msg_downloading_content) + it)
-            lifecycleScope.launch(Dispatchers.IO) {
-                var result = downloadGeo(it.second, 60000, httpPort)
+        var resultCount = 0
+        lifecycleScope.launch(Dispatchers.IO) {
+            assets.forEach {
+                var result = downloadGeo(it.second, 15000, httpPort)
                 if (!result) {
-                    result = downloadGeo(it.second, 60000, 0)
+                    result = downloadGeo(it.second, 15000, 0)
                 }
-                launch(Dispatchers.Main) {
-                    if (result) {
-                        toast(getString(R.string.toast_success) + " " + it.second.remarks)
-                        binding.recyclerView.adapter?.notifyDataSetChanged()
-                    } else {
-                        toast(getString(R.string.toast_failure) + " " + it.second.remarks)
-                    }
-                    dialog.dismiss()
+                if (result)
+                    resultCount++
+            }
+            withContext(Dispatchers.Main) {
+                if (resultCount > 0) {
+                    toast(getString(R.string.title_update_config_count, resultCount))
+                    binding.recyclerView.adapter?.notifyDataSetChanged()
+                } else {
+                    toast(getString(R.string.toast_failure))
                 }
+                binding.pbWaiting.hide()
             }
         }
     }
@@ -235,22 +233,10 @@ class UserAssetActivity : BaseActivity() {
     private fun downloadGeo(item: AssetUrlItem, timeout: Int, httpPort: Int): Boolean {
         val targetTemp = File(extDir, item.remarks + "_temp")
         val target = File(extDir, item.remarks)
-        var conn: HttpURLConnection? = null
         //Log.d(AppConfig.ANG_PACKAGE, url)
 
+        val conn = HttpUtil.createProxyConnection(item.url, httpPort, timeout, timeout, needStream = true) ?: return false
         try {
-            conn = if (httpPort == 0) {
-                URL(item.url).openConnection() as HttpURLConnection
-            } else {
-                URL(item.url).openConnection(
-                    Proxy(
-                        Proxy.Type.HTTP,
-                        InetSocketAddress(LOOPBACK, httpPort)
-                    )
-                ) as HttpURLConnection
-            }
-            conn.connectTimeout = timeout
-            conn.readTimeout = timeout
             val inputStream = conn.inputStream
             val responseCode = conn.responseCode
             if (responseCode == HttpURLConnection.HTTP_OK) {

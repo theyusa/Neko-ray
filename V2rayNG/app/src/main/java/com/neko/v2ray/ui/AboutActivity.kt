@@ -7,7 +7,6 @@ import android.os.Bundle
 import android.util.Log
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import com.tencent.mmkv.MMKV
@@ -15,7 +14,7 @@ import com.neko.v2ray.AppConfig
 import com.neko.v2ray.BuildConfig
 import com.neko.v2ray.R
 import com.neko.v2ray.databinding.ActivityAboutBinding
-import com.neko.v2ray.util.SpeedtestUtil
+import com.neko.v2ray.handler.SpeedtestManager
 import com.neko.v2ray.util.Utils
 import com.neko.v2ray.util.ZipUtil
 import java.io.File
@@ -112,7 +111,7 @@ class AboutActivity : BaseActivity() {
             Utils.openUri(this, AppConfig.v2rayNGPrivacyPolicy)
         }
 
-        "v${BuildConfig.VERSION_NAME} (${SpeedtestUtil.getLibVersion()})".also {
+        "v${BuildConfig.VERSION_NAME} (${SpeedtestManager.getLibVersion()})".also {
             binding.tvVersion.text = it
         }
     }

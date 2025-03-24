@@ -4,10 +4,16 @@ import android.content.Context
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import com.neko.v2ray.dto.AppInfo
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 object AppManagerUtil {
+    /**
+     * Load the list of network applications.
+     *
+     * @param context The context to use.
+     * @return A list of AppInfo objects representing the network applications.
+     */
     suspend fun loadNetworkAppList(context: Context): ArrayList<AppInfo> =
         withContext(Dispatchers.IO) {
             val packageManager = context.packageManager
