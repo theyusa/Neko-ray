@@ -1,175 +1,234 @@
-name: Build
+name: Build and Release
 
 on:
+  push:
+    branches:
+      - main
   pull_request:
   workflow_dispatch:
     inputs:
       release_tag:
+        description: 'Tag name for release (leave empty for artifacts only)'
         required: false
         type: string
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  ANDROID_SDK_VERSION: '36'
+  BUILD_TOOLS_VERSION: '36.0.0'
+  NDK_VERSION: '28.2.13676358'
+  CMDLINE_TOOLS_VERSION: '12266719'
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    permissions: write-all
+    permissions:
+      contents: write
 
     steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-      with:
-        submodules: 'recursive'
-        fetch-depth: '0'
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: 'recursive'
+          fetch-depth: 0
 
-    - name: Setup Android SDK
-      uses: android-actions/setup-android@v3
-      with:
-        log-accepted-android-sdk-licenses: false
-        cmdline-tools-version: '12266719'
-        packages: 'platforms;android-35 build-tools;35.0.0 platform-tools'
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          log-accepted-android-sdk-licenses: false
+          cmdline-tools-version: ${{ env.CMDLINE_TOOLS_VERSION }}
+          packages: 'platforms;android-${{ env.ANDROID_SDK_VERSION }} build-tools;${{ env.BUILD_TOOLS_VERSION }} platform-tools'
 
-    - name: Install NDK
-      run: |
-        echo "y" | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager \
-          --channel=3 \
-          --install "ndk;29.0.13113456"
-        echo "NDK_HOME=$ANDROID_HOME/ndk/29.0.13113456" >> $GITHUB_ENV
-        sed -i '18i\
-        \
-            ndkVersion = "29.0.13113456"' ${{ github.workspace }}/V2rayNG/app/build.gradle.kts
+      - name: Install NDK
+        run: |
+          echo "y" | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager \
+            --channel=0 \
+            --install "ndk;${{ env.NDK_VERSION }}"
+          NDK_PATH="$ANDROID_HOME/ndk/${{ env.NDK_VERSION }}"
+          echo "NDK_HOME=$NDK_PATH" >> $GITHUB_ENV
+          echo "ANDROID_NDK_HOME=$NDK_PATH" >> $GITHUB_ENV
 
-    - name: Restore cached libtun2socks
-      id: cache-libtun2socks-restore
-      uses: actions/cache/restore@v4
-      with:
-        path: ${{ github.workspace }}/libs
-        key: libtun2socks-${{ runner.os }}-${{ env.NDK_HOME }}-${{ hashFiles('.git/modules/badvpn/HEAD') }}-${{ hashFiles('.git/modules/libancillary/HEAD') }}
+      - name: Configure NDK in build.gradle
+        run: |
+          sed -i '18i\
+          \
+              ndkVersion = "${{ env.NDK_VERSION }}"' ${{ github.workspace }}/V2rayNG/app/build.gradle.kts
 
-    - name: Build libtun2socks
-      if: steps.cache-libtun2socks-restore.outputs.cache-hit != 'true'
-      run: |
-        bash compile-tun2socks.sh
+      - name: Restore cached libtun2socks
+        id: cache-libtun2socks
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ github.workspace }}/libs
+          key: libtun2socks-${{ runner.os }}-${{ env.NDK_VERSION }}-${{ hashFiles('.git/modules/hev-socks5-tunnel/HEAD') }}-${{ hashFiles('.git/modules/badvpn/HEAD') }}-${{ hashFiles('.git/modules/libancillary/HEAD') }}
 
-    - name: Save libtun2socks
-      if: steps.cache-libtun2socks-restore.outputs.cache-hit != 'true'
-      uses: actions/cache/save@v4
-      with:
-        path: ${{ github.workspace }}/libs
-        key: libtun2socks-${{ runner.os }}-${{ env.NDK_HOME }}-${{ hashFiles('.git/modules/badvpn/HEAD') }}-${{ hashFiles('.git/modules/libancillary/HEAD') }}
+      - name: Build libtun2socks
+        if: steps.cache-libtun2socks.outputs.cache-hit != 'true'
+        run: |
+          bash compile-tun2socks.sh
 
-    - name: Copy libtun2socks
-      run: |
-        cp -r ${{ github.workspace }}/libs ${{ github.workspace }}/V2rayNG/app
+      - name: Save libtun2socks cache
+        if: steps.cache-libtun2socks.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ github.workspace }}/libs
+          key: ${{ steps.cache-libtun2socks.outputs.cache-primary-key }}
 
-    - name: Fetch AndroidLibXrayLite tag
-      run: |
-        pushd AndroidLibXrayLite
-        CURRENT_TAG=$(git describe --tags --abbrev=0)
-        echo "Current tag in this repo: $CURRENT_TAG"
-        echo "CURRENT_TAG=$CURRENT_TAG" >> $GITHUB_ENV
-        popd
+      - name: Copy libtun2socks to app
+        run: |
+          cp -r ${{ github.workspace }}/libs ${{ github.workspace }}/V2rayNG/app
 
-    - name: Download libv2ray
-      uses: robinraju/release-downloader@v1
-      with:
-        repository: '2dust/AndroidLibXrayLite'
-        tag: ${{ env.CURRENT_TAG }}
-        fileName: 'libv2ray.aar'
-        out-file-path: V2rayNG/app/libs/
+      - name: Fetch AndroidLibXrayLite tag
+        run: |
+          pushd AndroidLibXrayLite
+          CURRENT_TAG=$(git describe --tags --abbrev=0)
+          echo "Current AndroidLibXrayLite tag: $CURRENT_TAG"
+          echo "CURRENT_TAG=$CURRENT_TAG" >> $GITHUB_ENV
+          popd
 
-    - name: Restore cached libhysteria2
-      id: cache-libhysteria2-restore
-      uses: actions/cache/restore@v4
-      with:
-        path: ${{ github.workspace }}/hysteria/libs
-        key: libhysteria2-${{ runner.os }}-${{ env.NDK_HOME }}-${{ hashFiles('.git/modules/hysteria/HEAD') }}-${{ hashFiles('libhysteria2.sh') }}
+      - name: Download libv2ray
+        uses: robinraju/release-downloader@v1
+        with:
+          repository: '2dust/AndroidLibXrayLite'
+          tag: ${{ env.CURRENT_TAG }}
+          fileName: 'libv2ray.aar'
+          out-file-path: V2rayNG/app/libs/
 
-    - name: Setup Golang
-      if: steps.cache-libhysteria2-restore.outputs.cache-hit != 'true'
-      uses: actions/setup-go@v5
-      with:
-        go-version-file: 'AndroidLibXrayLite/go.mod'
-        cache: false
+      - name: Restore cached libhysteria2
+        id: cache-libhysteria2
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ github.workspace }}/hysteria/libs
+          key: libhysteria2-${{ runner.os }}-${{ env.NDK_VERSION }}-${{ hashFiles('.git/modules/hysteria/HEAD') }}-${{ hashFiles('libhysteria2.sh') }}
 
-    - name: Build libhysteria2
-      if: steps.cache-libhysteria2-restore.outputs.cache-hit != 'true'
-      run: |
-        bash libhysteria2.sh
+      - name: Setup Golang
+        if: steps.cache-libhysteria2.outputs.cache-hit != 'true'
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'AndroidLibXrayLite/go.mod'
+          cache: true
 
-    - name: Save libhysteria2
-      if: steps.cache-libhysteria2-restore.outputs.cache-hit != 'true'
-      uses: actions/cache/save@v4
-      with:
-        path: ${{ github.workspace }}/hysteria/libs
-        key: libhysteria2-${{ runner.os }}-${{ env.NDK_HOME }}-${{ hashFiles('.git/modules/hysteria/HEAD') }}-${{ hashFiles('libhysteria2.sh') }}
+      - name: Build libhysteria2
+        if: steps.cache-libhysteria2.outputs.cache-hit != 'true'
+        run: |
+          bash libhysteria2.sh
 
-    - name: Copy libhysteria2
-      run: |
-        cp -r ${{ github.workspace }}/hysteria/libs ${{ github.workspace }}/V2rayNG/app
+      - name: Save libhysteria2 cache
+        if: steps.cache-libhysteria2.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ github.workspace }}/hysteria/libs
+          key: ${{ steps.cache-libhysteria2.outputs.cache-primary-key }}
 
-    - name: Setup Java
-      uses: actions/setup-java@v4
-      with:
-        distribution: 'temurin'
-        java-version: '21'
+      - name: Copy libhysteria2 to app
+        run: |
+          cp -r ${{ github.workspace }}/hysteria/libs ${{ github.workspace }}/V2rayNG/app
 
-#    - name: Decode Keystore
-#      uses: timheuer/base64-to-file@v1
-#      id: android_keystore
-#      with:
-#        fileName: "android_keystore.jks"
-#        encodedString: ${{ secrets.APP_KEYSTORE_BASE64 }}
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
 
-    - name: Build APK
-      run: |
-        cd ${{ github.workspace }}/V2rayNG
-        echo "sdk.dir=${ANDROID_HOME}" > local.properties
-        chmod 755 gradlew
-        ./gradlew assemble
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
 
-    - name: arm64
-      uses: actions/upload-artifact@v4
-      if: github.event.inputs.release_tag == ''
-      with:
-        name: Arm64
-        path: ${{ github.workspace }}/V2rayNG/app/build/outputs/apk/release/*arm64-v8a.apk
+      - name: Build APK
+        run: |
+          cd ${{ github.workspace }}/V2rayNG
+          echo "sdk.dir=${ANDROID_HOME}" > local.properties
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon --stacktrace
 
-    - name: armeabi-v7a
-      uses: actions/upload-artifact@v4
-      if: github.event.inputs.release_tag == ''
-      with:
-        name: Armeabi-v7a
-        path: ${{ github.workspace }}/V2rayNG/app/build/outputs/apk/release/*armeabi-v7a.apk
+      - name: Verify APK outputs
+        run: |
+          ls -lh ${{ github.workspace }}/V2rayNG/app/build/outputs/apk/release/
 
-    - name: x86
-      uses: actions/upload-artifact@v4
-      if: github.event.inputs.release_tag == ''
-      with:
-        name: X86
-        path: ${{ github.workspace }}/V2rayNG/app/build/outputs/apk/release/*x86.apk
+      # Upload artifacts (only if not creating a release)
+      - name: Upload arm64-v8a APK
+        if: github.event.inputs.release_tag == ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: arm64-v8a
+          path: ${{ github.workspace }}/V2rayNG/app/build/outputs/apk/release/*arm64-v8a.apk
+          retention-days: 7
 
-    - name: x86_64
-      uses: actions/upload-artifact@v4
-      if: github.event.inputs.release_tag == ''
-      with:
-        name: X86_64
-        path: ${{ github.workspace }}/V2rayNG/app/build/outputs/apk/release/*x86_64.apk
+      - name: Upload armeabi-v7a APK
+        if: github.event.inputs.release_tag == ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: armeabi-v7a
+          path: ${{ github.workspace }}/V2rayNG/app/build/outputs/apk/release/*armeabi-v7a.apk
+          retention-days: 7
 
-    - name: universal
-      uses: actions/upload-artifact@v4
-      if: github.event.inputs.release_tag == ''
-      with:
-        name: Universal
-        path: ${{ github.workspace }}/V2rayNG/app/build/outputs/apk/release/*universal.apk
+      - name: Upload x86 APK
+        if: github.event.inputs.release_tag == ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: x86
+          path: ${{ github.workspace }}/V2rayNG/app/build/outputs/apk/release/*x86.apk
+          retention-days: 7
 
-    - name: Upload to release
-      uses: softprops/action-gh-release@v2
-      if: github.event.inputs.release_tag != ''
-      with:
-        files: |
-          ${{ github.workspace }}/V2rayNG/app/build/outputs/apk/release/*arm64-v8a.apk
-          ${{ github.workspace }}/V2rayNG/app/build/outputs/apk/release/*armeabi-v7a.apk
-          ${{ github.workspace }}/V2rayNG/app/build/outputs/apk/release/*x86.apk
-          ${{ github.workspace }}/V2rayNG/app/build/outputs/apk/release/*x86_64.apk
-          ${{ github.workspace }}/V2rayNG/app/build/outputs/apk/release/*universal.apk
-        tag_name: ${{ github.event.inputs.release_tag }}
-        make_latest: true
+      - name: Upload x86_64 APK
+        if: github.event.inputs.release_tag == ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: x86_64
+          path: ${{ github.workspace }}/V2rayNG/app/build/outputs/apk/release/*x86_64.apk
+          retention-days: 7
+
+      - name: Upload universal APK
+        if: github.event.inputs.release_tag == ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: universal
+          path: ${{ github.workspace }}/V2rayNG/app/build/outputs/apk/release/*universal.apk
+          retention-days: 7
+
+      # Create GitHub Release (only if release_tag is provided)
+      - name: Create GitHub Release
+        if: github.event.inputs.release_tag != ''
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.release_tag }}
+          name: Release ${{ github.event.inputs.release_tag }}
+          body: |
+            ## 🚀 Release ${{ github.event.inputs.release_tag }}
+            
+            ### Build Information
+            - **Build date**: ${{ github.event.head_commit.timestamp }}
+            - **Commit**: ${{ github.sha }}
+            - **Branch**: ${{ github.ref_name }}
+            - **NDK Version**: ${{ env.NDK_VERSION }}
+            - **Android SDK**: ${{ env.ANDROID_SDK_VERSION }}
+            
+            ### APK Variants
+            - `arm64-v8a` - For modern 64-bit ARM devices (most common)
+            - `armeabi-v7a` - For older 32-bit ARM devices
+            - `x86` - For 32-bit x86 devices (emulators)
+            - `x86_64` - For 64-bit x86 devices (emulators)
+            - `universal` - Works on all architectures (larger size)
+          draft: false
+          prerelease: false
+          make_latest: true
+          files: |
+            ${{ github.workspace }}/V2rayNG/app/build/outputs/apk/release/*arm64-v8a.apk
+            ${{ github.workspace }}/V2rayNG/app/build/outputs/apk/release/*armeabi-v7a.apk
+            ${{ github.workspace }}/V2rayNG/app/build/outputs/apk/release/*x86.apk
+            ${{ github.workspace }}/V2rayNG/app/build/outputs/apk/release/*x86_64.apk
+            ${{ github.workspace }}/V2rayNG/app/build/outputs/apk/release/*universal.apk
+
+      - name: Clean up temporary files
+        if: always()
+        run: |
+          rm -rf ${{ github.workspace }}/libs
+          rm -rf ${{ github.workspace }}/hysteria/libs
